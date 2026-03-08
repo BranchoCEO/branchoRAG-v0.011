@@ -2,8 +2,9 @@ use pyo3::prelude::*;
 use serde::{Serialize, Deserialize};
 use std::fs::File;
 use std::io::Write;
-use walkdir::WalkDir; // The folder walker
+use walkdir::WalkDir;
 
+// --- BLOCK 1: DATA ---
 #[derive(Serialize, Deserialize)]
 struct GraphData {
     nodes: Vec<String>,
@@ -15,6 +16,8 @@ struct BranchoRAG {
     data: GraphData,
 }
 
+// --- BLOCK 2: METHODS ---
+// This block must be ALONE. No curly braces should be wrapping it.
 #[pymethods]
 impl BranchoRAG {
     #[new]
@@ -24,7 +27,6 @@ impl BranchoRAG {
         }
     }
 
-    // The "Eyes": Scans a folder and adds every file as a node
     fn scan_folder(&mut self, path: String) -> PyResult<()> {
         for entry in WalkDir::new(path).into_iter().filter_map(|e| e.ok()) {
             if entry.file_type().is_file() {
@@ -45,8 +47,9 @@ impl BranchoRAG {
     }
 }
 
+// --- BLOCK 3: THE MODULE ---
 #[pymodule]
-fn branchorag(_py: Python, m: &PyModule) -> PyResult<()> {
+fn branchorag(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<BranchoRAG>()?;
     Ok(())
 }
