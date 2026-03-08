@@ -1,26 +1,31 @@
 import branchorag
+import os
 
-# Change "." to a specific path like "C:/Users/Name/Projects/Test" to scan elsewhere
-SCAN_PATH = "." 
+# Using a 'raw' string (r"") to handle Windows backslashes correctly
+SCAN_PATH = r"C:\Users\grint\Documents\OneDrive\roop_row\MONEYMOINE\Web Training"
 MEMORY_FILE = "brancho_memory.json"
 
 def run_brain():
     print("--- BranchoRAG v0.01: Active ---")
 
+    # Quick check to see if the path exists before we hand it to Rust
+    if not os.path.exists(SCAN_PATH):
+        print(f"❌ Error: The path '{SCAN_PATH}' does not exist.")
+        return
+
     try:
         # 1. Initialize the RAG system
         rag = branchorag.BranchoRAG()
 
-        # 2. Tell the AI to look at the project folder
-        print(f"Scanning folder: {SCAN_PATH}...")
+        # 2. Tell the AI to look at the specific Web Training folder
+        print(f"Scanning target folder: {SCAN_PATH}...")
         rag.scan_folder(SCAN_PATH)
         
-        # This will now show a much smaller, cleaner number!
         print(f"  Found {rag.node_count()} relevant file(s).")
 
         # 3. Save the findings to your SSD
         rag.save_memory(MEMORY_FILE)
-        print(f"✅ Success: BranchoRAG has mapped your project to {MEMORY_FILE}.")
+        print(f"✅ Success: Project map saved to {MEMORY_FILE}.")
 
     except Exception as e:
         print(f"❌ BranchoRAG failed: {e}")
