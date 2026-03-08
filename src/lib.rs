@@ -56,7 +56,8 @@ impl BranchoRAG {
 
 // --- BLOCK 3: THE MODULE ---
 #[pymodule]
-fn branchorag(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
+fn branchorag(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<BranchoRAG>()?;
     Ok(())
 }
+//python -m maturin develop
