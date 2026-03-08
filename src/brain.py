@@ -4,7 +4,7 @@ import torch
 from torch_geometric.data import Data
 from torch_geometric.nn import GCNConv
 
-print("--- BranchoGraph v0.01 Initializing ---")
+print("BranchoRAG v0.01 Initializing")
 
 # 1. USE THE RUST ENGINE (Lightning Fast)
 print("1. Rust building the code graph...")
