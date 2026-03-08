@@ -8,7 +8,7 @@ use walkdir::WalkDir;
 #[derive(Serialize, Deserialize)]
 struct GraphData {
     nodes: Vec<String>,
-    edges: Vec<(usize, usize)>,
+    edges: Vec<(usize, usize)>, // Reserved for future relationship mapping
 }
 
 #[pyclass]
@@ -40,10 +40,17 @@ impl BranchoRAG {
     }
 
     fn save_memory(&self, filename: String) -> PyResult<()> {
-        let json = serde_json::to_string_pretty(&self.data).unwrap();
+        // Propagate serialization errors to Python instead of panicking
+        let json = serde_json::to_string_pretty(&self.data)
+            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?;
         let mut file = File::create(filename)?;
         file.write_all(json.as_bytes())?;
         Ok(())
+    }
+
+    /// Returns the number of file nodes currently held in memory.
+    fn node_count(&self) -> usize {
+        self.data.nodes.len()
     }
 }
 
