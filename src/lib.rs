@@ -2,7 +2,7 @@ use pyo3::prelude::*;
 use serde::{Serialize, Deserialize};
 use std::collections::HashSet;
 use std::fs::{self, File};
-use std::io::Write;
+use std::io::{Write, BufReader};
 use walkdir::WalkDir;
 
 // --- BLOCK 1: DATA ---
@@ -72,24 +72,43 @@ impl BranchoRAG {
         Ok(())
     }
 
-    /// Returns all file contents in order so Python can batch-encode them.
-    fn get_contents(&self) -> Vec<String> {
-        self.data.nodes.iter().map(|n| n.content.clone()).collect()
+    /// Returns (index, content) for every node that has no embedding yet.
+    /// Python uses the indices to write back only the new embeddings via set_embeddings_partial().
+    fn get_unembedded_contents(&self) -> Vec<(usize, String)> {
+        self.data.nodes.iter().enumerate()
+            .filter(|(_, n)| n.embedding.is_empty())
+            .map(|(i, n)| (i, n.content.clone()))
+            .collect()
     }
 
-    /// Accepts the full list of embeddings from Python and writes them back into each node.
-    /// Expects exactly one Vec<f32> per node, in the same order as get_contents() returned them.
-    fn set_embeddings(&mut self, embeddings: Vec<Vec<f32>>) -> PyResult<()> {
-        if embeddings.len() != self.data.nodes.len() {
-            return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
-                "Expected {} embeddings, got {}",
-                self.data.nodes.len(),
-                embeddings.len()
-            )));
+    /// Accepts (index, embedding) pairs and writes them back into the correct nodes.
+    /// Only touches nodes that were returned by get_unembedded_contents().
+    fn set_embeddings_partial(&mut self, embeddings: Vec<(usize, Vec<f32>)>) -> PyResult<()> {
+        let node_count = self.data.nodes.len();
+        for (idx, emb) in embeddings {
+            if idx >= node_count {
+                return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
+                    "Index {} out of range (node count: {})", idx, node_count
+                )));
+            }
+            self.data.nodes[idx].embedding = emb;
         }
-        for (node, emb) in self.data.nodes.iter_mut().zip(embeddings.into_iter()) {
-            node.embedding = emb;
-        }
+        Ok(())
+    }
+
+    /// Loads a previously saved memory JSON back into this instance.
+    /// Safe to call before scan_folder — nodes loaded here participate in the seen-set dedup.
+    fn load_memory(&mut self, filename: String) -> PyResult<()> {
+        let file = File::open(&filename)
+            .map_err(|e| PyErr::new::<pyo3::exceptions::PyFileNotFoundError, _>(
+                format!("Could not open '{}': {}", filename, e)
+            ))?;
+        let reader = BufReader::new(file);
+        let loaded: GraphData = serde_json::from_reader(reader)
+            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(
+                format!("Failed to parse '{}': {}", filename, e)
+            ))?;
+        self.data = loaded;
         Ok(())
     }
 
