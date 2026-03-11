@@ -6,7 +6,9 @@ from sentence_transformers import SentenceTransformer
 # --- CONFIG ---
 SCAN_PATH = r"C:\Users\grint\Documents\OneDrive\roop_row\MONEYMOINE\Web Training"
 MEMORY_FILE = "brancho_memory.json"
-EMBED_MODEL = "all-MiniLM-L6-v2"  # 384-dim, ~80MB, fast and good for code
+EMBED_MODEL = "all-MiniLM-L6-v2"   # 384-dim, ~80MB, fast and good for code
+EXPECTED_DIM = 384
+MAX_EMBED_CHARS = 4_000             # ~1000 tokens — long files are truncated before encoding
 
 def run_brain():
     print("--- BranchoRAG v0.03: The Embedder ---")
@@ -17,31 +19,54 @@ def run_brain():
     try:
         rag = branchorag.BranchoRAG()
 
-        # --- STEP 1: SCAN ---
+        # --- STEP 1: LOAD EXISTING MEMORY (if any) ---
+        if os.path.isfile(MEMORY_FILE):
+            print(f"Loading existing memory from {MEMORY_FILE}...")
+            rag.load_memory(MEMORY_FILE)
+            print(f"  Loaded {rag.node_count()} existing node(s).")
+
+        # --- STEP 2: SCAN ---
         print(f"Reading files in: {SCAN_PATH}...")
         start = time.perf_counter()
         rag.scan_folder(SCAN_PATH)
         elapsed = time.perf_counter() - start
-        count = rag.node_count()
-        print(f"  Read {count} file(s) in {elapsed:.2f}s.")
+        print(f"  {rag.node_count()} total file(s) after scan ({elapsed:.2f}s).")
 
-        # --- STEP 2: EMBED ---
-        print(f"Loading embedding model '{EMBED_MODEL}'...")
-        model = SentenceTransformer(EMBED_MODEL)
+        # --- STEP 3: EMBED (only files without an embedding) ---
+        pending = rag.get_unembedded_contents()  # list of (index, content)
 
-        contents = rag.get_contents()  # pull all file texts out of Rust in one call
-        print(f"Embedding {len(contents)} file(s)... (this may take a moment)")
+        if not pending:
+            print("  All files already embedded — nothing to do.")
+        else:
+            print(f"Loading embedding model '{EMBED_MODEL}'...")
+            model = SentenceTransformer(EMBED_MODEL)
 
-        start = time.perf_counter()
-        # show_progress_bar gives a live tqdm bar during encoding
-        embeddings = model.encode(contents, show_progress_bar=True, convert_to_numpy=True)
-        elapsed = time.perf_counter() - start
-        print(f"  Embedded in {elapsed:.2f}s.")
+            # Sanity-check: confirm the model outputs the dimension we expect
+            probe = model.encode(["test"], convert_to_numpy=True)
+            actual_dim = probe.shape[1]
+            if actual_dim != EXPECTED_DIM:
+                raise ValueError(
+                    f"Model output dim is {actual_dim}, expected {EXPECTED_DIM}. "
+                    f"Update EXPECTED_DIM or switch models."
+                )
 
-        # convert numpy rows → plain Python lists so PyO3 can accept them
-        rag.set_embeddings([emb.tolist() for emb in embeddings])
+            indices, contents = zip(*pending)
 
-        # --- STEP 3: SAVE ---
+            # Truncate very long files — sentence-transformers silently truncates at 256 tokens
+            # by default anyway, but being explicit here prevents silent data loss on huge files.
+            contents = [c[:MAX_EMBED_CHARS] for c in contents]
+
+            print(f"Embedding {len(contents)} new file(s)...")
+            start = time.perf_counter()
+            embeddings = model.encode(contents, show_progress_bar=True, convert_to_numpy=True)
+            elapsed = time.perf_counter() - start
+            print(f"  Embedded in {elapsed:.2f}s.")
+
+            rag.set_embeddings_partial(
+                [(int(idx), emb.tolist()) for idx, emb in zip(indices, embeddings)]
+            )
+
+        # --- STEP 4: SAVE ---
         rag.save_memory(MEMORY_FILE)
         print(f"✅ Success: Knowledge + embeddings saved to {MEMORY_FILE}.")
 
